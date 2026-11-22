@@ -283,11 +283,13 @@ export function normalizeAuth(cred, profile = null, source = "") {
   const profileId = str(cred?.profileId ?? profile?.id)
   const awsAccountId = str(cred?.awsAccountId ?? cred?.aws_account_id ?? cred?.accountId)
   const accountId = email || displayName || profileId || awsAccountId || "Amazon Quick"
+  const id = str(cred?.id)
 
   return {
     access,
     refresh,
     expires,
+    ...(id ? { id } : {}),
     ...(refreshExpiresAt ? { refreshExpiresAt } : {}),
     ...(clientId ? { clientId } : {}),
     ...(clientSecret ? { clientSecret } : {}),
@@ -521,7 +523,7 @@ export async function currentAuth(client, auth, opts = {}) {
   if (!stale(a, REFRESH_LEAD_MS, opts.now) || !refreshable(a, opts.now)) return a
   try {
     return await renewOidc(a, async (next) => {
-      await client?.auth?.set?.({ path: { id: "amazon-quick" }, body: next })
+      await client?.auth?.set?.({ path: { id: a.id || "amazon-quick" }, body: next })
     }, opts)
   } catch (e) {
     if (!e?.refreshRefused && a.expires > (opts.now ?? Date.now())) return a
@@ -553,7 +555,7 @@ export async function reissuedAuth(client, getAuth, a, beganAccess, opts = {}) {
   }
   try {
     const next = await renewOidc(a, async (n) => {
-      await client?.auth?.set?.({ path: { id: "amazon-quick" }, body: n })
+      await client?.auth?.set?.({ path: { id: a.id || "amazon-quick" }, body: n })
     }, opts)
     return next.access !== a.access ? { a: next } : { why: "renewing gave the same access token", kind: "unknown" }
   } catch (e) {
@@ -617,6 +619,7 @@ export function signInsIn(text) {
 
 export async function importSignIns(texts, opts = {}) {
   const results = []
+  let successCount = 0
   for (const text of texts) {
     for (const item of signInsIn(text)) {
       if (item.error) {
@@ -631,10 +634,19 @@ export async function importSignIns(texts, opts = {}) {
           throw new Error("the credentials have expired and cannot be refreshed")
         }
         if (!a.tenantUrl) throw new Error("missing tenant_url in imported Amazon Quick credentials")
+        // 为每个导入的账号分配独立 auth ID 和唯一 accountId
+        // accountId 决定 Magpie 的账号去重（settle）：两个号 accountId 相同会被合并
+        const acctId = a.tenantUrl
+          ? `amazon-quick-${createHash("sha256").update(a.tenantUrl).digest("hex").slice(0, 12)}`
+          : `amazon-quick-${++successCount}`
+        const acctLabel = a.tenantUrl ? hostFromUrl(a.tenantUrl) : `Amazon Quick ${successCount}`
         results.push({
           ...a,
+          id: acctId,
+          accountId: acctLabel,
           type: "success",
         })
+        successCount++
       } catch (e) {
         results.push({
           type: "failed",
