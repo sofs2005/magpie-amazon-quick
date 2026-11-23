@@ -868,6 +868,8 @@ export function openaiToSncsRequest(body, opts = {}) {
     convoHashes,
     imageUrls: collectImageUrls(outboundMsgs),
     overflowUserText,
+    frameBytes: measure(text),
+    textBytes: Buffer.byteLength(text, "utf8"),
     stream: body?.stream === true,
     outpostId,
     workingSessionId,
@@ -1254,6 +1256,12 @@ async function runSncsTurn(a, openaiBody, ctx) {
   if (attachments.length) {
     reqPlan.userMessagePayload.attachments = attachments
   }
+  try {
+    const finalFrameBytes = (gateway ? buildGatewayInputFrame : buildAidpInputFrame)({ type: "user_message", payload: reqPlan.userMessagePayload }).byteLength
+    console.log(
+      `[amazon-quick] turn isResume=${reqPlan.isResume} frameBytes=${finalFrameBytes} textBytes=${reqPlan.textBytes} overflowChars=${(reqPlan.overflowUserText || "").length} attachments=${attachments.length}`,
+    )
+  } catch {}
 
   const surface = surfaceTypeForPlatform(opts.platform)
   const encodeOutbound = gateway ? buildGatewayInputFrame : buildAidpInputFrame
