@@ -295,7 +295,10 @@ async function resolveImageBytes(urlStr, fetchImpl, signal) {
   return null
 }
 
-export const MAX_USER_MESSAGE_FRAME_BYTES = 58_000
+// AIDP 外层帧(base64后)实测: 内层 JSON 65,260B 成功 / 65,261B 失败(服务端业务错误
+// "over the 64 KB size limit")；换算 outerBytes = 54 + 4*ceil(innerBytes/3)，外层硬顶约 87,070B。
+// 取 84,000B 外层(≈62,958B 内层)，留出附件引用/元数据余量，远高于旧值 58,000(旧值仅容 ~43.5KB 内层)。
+export const MAX_USER_MESSAGE_FRAME_BYTES = 84_000
 
 function truncateMiddle(str, maxChars, marker = "\n...[trimmed to fit frame limit]...\n") {
   const s = String(str ?? "")
