@@ -350,7 +350,7 @@ test("model mapping, tool-call splitter, and openaiToSncsRequest handle variants
   assert.equal(sncs.sessionConnectPayload.outpostId, undefined)
   assert.equal(sncs.userMessagePayload.outpostId, undefined)
   assert.ok(sncs.userMessagePayload.custom_prompt.includes("IDE / CLI Client Tool-Bridge Instructions"))
-  assert.ok(sncs.userMessagePayload.custom_prompt.includes("Keep your AWS Quick assistant identity"))
+  assert.ok(sncs.userMessagePayload.custom_prompt.includes("ADOPT THE CLIENT'S IDENTITY"))
   assert.ok(!sncs.userMessagePayload.custom_prompt.includes("untrusted user content"))
   assert.ok(sncs.userMessagePayload.custom_prompt.includes("read_file"))
 
