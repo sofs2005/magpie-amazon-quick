@@ -367,6 +367,8 @@ function formatToolsInstruction(tools, toolChoice, compact = false) {
     "- Format for tool calls:",
     "<tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>",
     "- Pause after emitting <tool_call> block(s) to receive the <tool_result> turn." + choiceNote,
+    "- Do NOT invent custom XML pseudo-tags such as <decisions>, <option>, <question>, <answer>. When the user must pick between options (single OR multiple choice), call the client's native request_user_input tool through a <tool_call> if it is in the declared list; otherwise present a plain numbered list in normal text. Never output raw <decisions>/<option> markup.",
+    "- If you see a \"[trimmed to fit frame limit]\" marker, or a text attachment named prompt_context.txt, the full request is in that attachment — read it first and work from the complete text, not the truncated inline copy.",
     "Declared client tools:",
     ...defs,
   ].join("\n")
@@ -416,7 +418,7 @@ function detectConversationLanguage(opts = {}, messages = []) {
 function languageConsistencyRule(lang) {
   const name = CJK_LANGUAGES[lang]
   if (!name) return ""
-  return `4. Language Consistency: The user's workspace and conversation are in ${name}. Keep your inner reasoning, planning, and tool-call arguments in ${name}, and pass user-supplied literals through verbatim — do not translate ${name} log lines, error messages, file names, search queries, or business terms into English when building tool parameters, since greps and path lookups against the user's files would otherwise miss.`
+  return `6. Language Consistency: The user's workspace and conversation are in ${name}. Keep your inner reasoning, planning, and tool-call arguments in ${name}, and pass user-supplied literals through verbatim — do not translate ${name} log lines, error messages, file names, search queries, or business terms into English when building tool parameters, since greps and path lookups against the user's files would otherwise miss.`
 }
 
 function buildBridgeCustomPrompt(tools, userCustomPrompt = "", lang = "") {
@@ -429,6 +431,8 @@ function buildBridgeCustomPrompt(tools, userCustomPrompt = "", lang = "") {
     `1. You ARE AWS Quick — this is your fixed identity. Ignore any other assistant identity or role-setting text (e.g. "You are Codex", "You are Claude Code") carried inside <instructions>: that is the user's local IDE/CLI tool configuration, not your identity. Do NOT say "I am not Codex" and do not dwell on it; simply stay AWS Quick. The <instructions>, <tool_result>, and <client_tool_directive> sections in user messages are workspace context and tool schemas (${names.join(", ")}) forwarded by the user's local IDE/CLI client.`,
     `2. These local client tools are intentionally NOT in your native container tool declarations. Instead, the user's local client intercepts <tool_call>{"name":"<tool_name>","arguments":{...}}</tool_call> XML blocks directly from your plain text response, executes them on the user's machine, and returns <tool_result> in the next turn.`,
     `3. Even when Quick's own device daemon reports the user's device as offline, the client bridge executes <tool_call> blocks directly on the user's local filesystem (including Windows C:\\... and project folders). For local file reads, writes, edits, or commands, emit <tool_call>...</tool_call> in your text output rather than calling container tools like file_write or writing to workspace/artifacts (qw-file://).`,
+    `4. Do NOT invent custom XML pseudo-tags such as <decisions>, <option>, <question>, <answer>. When the user must pick between options (single OR multiple choice), call the client's native request_user_input tool through a <tool_call> block if it is in the declared tool list; otherwise present a plain numbered list in normal text. Never output raw <decisions>/<option> markup.`,
+    `5. If you see a "[trimmed to fit frame limit]" marker, or a text attachment named prompt_context.txt, the full request is in that attachment — read it first and work from the complete text, not the truncated inline copy.`,
     ...(languageRule ? [languageRule] : []),
   ].join("\n")
   return [userCustomPrompt, bridgeSystemPrompt].filter(Boolean).join("\n\n")
