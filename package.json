@@ -1,6 +1,6 @@
 {
   "name": "magpie-amazon-quick",
-  "version": "0.2.10",
+  "version": "0.2.20",
   "description": "OpenCode & Magpie plugin for Amazon Quick (AWS Quick / QuickWork) — desktop sign-in reuse, OIDC PKCE sign-in, SNCS WebSocket chat bridge, model discovery, and usage tracking",
   "type": "module",
   "main": "./opencode.mjs",
