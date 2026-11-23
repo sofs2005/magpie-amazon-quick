@@ -368,7 +368,7 @@ function formatToolsInstruction(tools, toolChoice, compact = false) {
     "<tool_call>{\"name\":\"tool_name\",\"arguments\":{}}</tool_call>",
     "- Pause after emitting <tool_call> block(s) to receive the <tool_result> turn." + choiceNote,
     "- Do NOT invent custom XML pseudo-tags such as <decisions>, <option>, <question>, <answer>. When the user must pick between options (single OR multiple choice), call the client's native request_user_input tool through a <tool_call> if it is in the declared list; otherwise present a plain numbered list in normal text. Never output raw <decisions>/<option> markup.",
-    "- If you see a \"[trimmed to fit frame limit]\" marker, or a text attachment named prompt_context.txt, the full request is in that attachment — read it first and work from the complete text, not the truncated inline copy.",
+    "- If you see a \"[trimmed to fit frame limit]\" marker, the full request MAY be attached to THIS message as a text attachment named prompt_context.txt. Read it from the message attachment if present. IMPORTANT: it is an attachment, NOT a file on the user's disk — never use shell/exec_command/Get-ChildItem to search the local filesystem for prompt_context.txt. If no such attachment is present, tell the user the message was truncated and ask them to resend a shorter request.",
     "Declared client tools:",
     ...defs,
   ].join("\n")
@@ -432,7 +432,7 @@ function buildBridgeCustomPrompt(tools, userCustomPrompt = "", lang = "") {
     `2. These local client tools are intentionally NOT in your native container tool declarations. Instead, the user's local client intercepts <tool_call>{"name":"<tool_name>","arguments":{...}}</tool_call> XML blocks directly from your plain text response, executes them on the user's machine, and returns <tool_result> in the next turn.`,
     `3. Even when Quick's own device daemon reports the user's device as offline, the client bridge executes <tool_call> blocks directly on the user's local filesystem (including Windows C:\\... and project folders). For local file reads, writes, edits, or commands, emit <tool_call>...</tool_call> in your text output rather than calling container tools like file_write or writing to workspace/artifacts (qw-file://).`,
     `4. Do NOT invent custom XML pseudo-tags such as <decisions>, <option>, <question>, <answer>. When the user must pick between options (single OR multiple choice), call the client's native request_user_input tool through a <tool_call> block if it is in the declared tool list; otherwise present a plain numbered list in normal text. Never output raw <decisions>/<option> markup.`,
-    `5. If you see a "[trimmed to fit frame limit]" marker, or a text attachment named prompt_context.txt, the full request is in that attachment — read it first and work from the complete text, not the truncated inline copy.`,
+    `5. If you see a "[trimmed to fit frame limit]" marker, the full request MAY be attached to this message as a text attachment named prompt_context.txt (read it from the message attachment if present). It is an attachment, NOT a file on disk — never use shell/exec_command to search the local filesystem for it. If it is missing, tell the user the request was truncated and ask them to resend a shorter one.`,
     ...(languageRule ? [languageRule] : []),
   ].join("\n")
   return [userCustomPrompt, bridgeSystemPrompt].filter(Boolean).join("\n\n")
@@ -1227,7 +1227,14 @@ async function prepareTurnAttachments(a, reqPlan, opts) {
       attachments.push(r.value)
     } else if (r.status === "rejected" && r.reason?.status === 401) {
       throw r.reason
+    } else if (r.status === "rejected") {
+      console.error(`[amazon-quick] attachment upload failed (dropped): ${r.reason?.message || r.reason}`)
     }
+  }
+  if (tasks.length && attachments.length < tasks.length) {
+    console.error(
+      `[amazon-quick] WARNING: ${tasks.length - attachments.length}/${tasks.length} attachment(s) dropped — long content (prompt_context.txt / images) will NOT reach the model; the request may be truncated.`,
+    )
   }
   return attachments
 }
