@@ -865,16 +865,68 @@ export async function browserSignIn(inputs = {}, opts = {}) {
 }
 
 /**
+ * Discover the Amazon Quick tenant URL from an OIDC access token.
+ * Called after a device-code sign-in when no tenantUrl was provided.
+ * Tries quick.aws.com endpoints (following redirects) and the OIDC userinfo endpoint.
+ */
+export async function discoverTenantUrl(a, fetchImpl = fetch) {
+  const headers = { Authorization: `Bearer ${a.access}` }
+  // 1) quick.aws.com/v1/discovery — may redirect to tenant URL or return tenant info
+  try {
+    const res = await fetchImpl("https://quick.aws.com/v1/discovery", {
+      headers,
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    })
+    const finalUrl = str(res.url)
+    if (finalUrl && !finalUrl.startsWith("https://quick.aws.com/")) {
+      return normalizeHttpsUrl(finalUrl)
+    }
+    const body = await res.json().catch(() => ({}))
+    const t = str(body?.tenantUrl || body?.tenant_url || body?.tenant)
+    if (t) return normalizeHttpsUrl(t)
+  } catch {}
+  // 2) quick.aws.com/v1/models — may redirect to tenant URL
+  try {
+    const res = await fetchImpl("https://quick.aws.com/v1/models", {
+      headers,
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    })
+    const finalUrl = str(res.url)
+    if (finalUrl && !finalUrl.startsWith("https://quick.aws.com/")) {
+      return normalizeHttpsUrl(finalUrl)
+    }
+    const body = await res.json().catch(() => ({}))
+    const t = str(body?.tenantUrl || body?.tenant_url || body?.tenant)
+    if (t) return normalizeHttpsUrl(t)
+  } catch {}
+  // 3) OIDC userinfo — may include tenant claims
+  if (a.region) {
+    try {
+      const res = await fetchImpl(`https://oidc.${a.region}.amazonaws.com/userinfo`, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) {
+        const body = await res.json().catch(() => ({}))
+        const t = str(body?.tenantUrl || body?.tenant_url || body?.tenant)
+        if (t) return normalizeHttpsUrl(t)
+      }
+    } catch {}
+  }
+  return ""
+}
+
+/**
  * OAuth 2.0 Device Authorization Grant flow (`urn:ietf:params:oauth:grant-type:device_code`)
  * for VPS, Docker, SSH, and remote web-UI deployments where localhost callbacks cannot reach the server.
  */
 export async function deviceCodeSignIn(inputs = {}, opts = {}) {
-  const { issuerUrl, tenantUrl, providerType, region } = resolveOidcContext(inputs, opts)
-  if (!tenantUrl) {
-    throw new Error(
-      "Missing Amazon Quick Tenant URL (https://qbs-...plato.ai.aws.dev). Copy tenant_url and issuer_url from ~/.quickwork/profiles.json on a machine where Amazon Quick desktop has signed in, or use Import accounts from a file.",
-    )
-  }
+  const { issuerUrl, tenantUrl: providedTenantUrl, providerType, region } = resolveOidcContext(inputs, opts)
+  // tenantUrl 现在可以缺省：OIDC 设备码流程本身只需要 issuerUrl，
+  // 拿到 token 后再通过 discoverTenantUrl 自动探测
+  const tenantUrl = providedTenantUrl
   const fetchImpl = opts.fetch ?? fetch
   const oidcBase = `https://oidc.${region}.amazonaws.com`
 
@@ -961,6 +1013,21 @@ export async function deviceCodeSignIn(inputs = {}, opts = {}) {
         const tok = await tokRes.json().catch(() => ({}))
         if (tokRes.ok && tok?.accessToken) {
           const expiresIn = Number(tok.expiresIn) > 0 ? Number(tok.expiresIn) : 3600
+          // 如果用户没有提供 tenantUrl，拿到 token 后自动探测
+          let resolvedTenantUrl = tenantUrl
+          if (!resolvedTenantUrl) {
+            resolvedTenantUrl = await discoverTenantUrl(
+              { access: tok.accessToken, region },
+              fetchImpl,
+            )
+          }
+          if (!resolvedTenantUrl) {
+            return {
+              type: "failed",
+              error:
+                "Could not discover Amazon Quick Tenant URL automatically. Please provide it in the Tenant URL field (format: https://qbs-...plato.ai.aws.dev).",
+            }
+          }
           return {
             ...normalizeAuth({
               access: tok.accessToken,
@@ -969,10 +1036,10 @@ export async function deviceCodeSignIn(inputs = {}, opts = {}) {
               clientId: regJson.clientId,
               clientSecret: regJson.clientSecret || "",
               issuerUrl,
-              tenantUrl,
+              tenantUrl: resolvedTenantUrl,
               region,
               providerType,
-              accountId: hostFromUrl(tenantUrl) || "Amazon Quick",
+              accountId: hostFromUrl(resolvedTenantUrl) || "Amazon Quick",
             }),
             type: "success",
           }

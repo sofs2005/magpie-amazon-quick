@@ -179,7 +179,7 @@ export function createAmazonQuickPlugin(deps = {}) {
               {
                 type: "text",
                 key: "tenantUrl",
-                message: "Amazon Quick Tenant URL（从 ~/.quickwork/profiles.json 复制 tenant_url；本机已装桌面端可留空）",
+                message: "Amazon Quick Tenant URL（留空则自动探测；也可从 ~/.quickwork/profiles.json 复制 tenant_url）",
                 placeholder: "https://qbs-...dp.appintegrations.us-east-1.prod.plato.ai.aws.dev",
                 required: false,
               },
